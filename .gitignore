@@ -1,0 +1,8 @@
+mod/*.c
+mod/*.o
+*.o*
+*.e*
+*.po*
+*.qlog
+mod/x86_64/*
+results/*

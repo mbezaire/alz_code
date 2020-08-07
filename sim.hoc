@@ -1,0 +1,118 @@
+// $Id: sim.hoc,v 1.3 2012/03/16 16:25:32 samn Exp $ 
+
+objref pc
+pc = new ParallelContext()
+
+print "num hosts = ", pc.nhost
+
+
+proc default_var() {
+    strdef s
+	if (name_declared($s1) == 0) {	// If the name of the variable used
+									//  at the command line has not yet
+									//  been defined in the code
+									
+		if (argtype(2) == 2) {		// If the variable is type string
+		
+			sprint(s, "~strdef %s", $s1)	// Create a string of the command
+			
+			execute(s)					// Run the command to define a new string object
+			
+			sprint(s, "%s = \"%s\"", $s1, $s2)	// Set the string object
+													//  equal to the string value
+													
+		}else{
+			hoc_ac_ = $2					// Set a temporary variable equal to the
+											//  desired value of the variable
+											
+			sprint(s, "%s = hoc_ac_", $s1)	// Create a string of the command
+		}
+		execute(s)							// Run the command to set the variable
+												//  to the desired value
+	}
+}
+
+default_var("RunName","sim")
+
+//* create the results folder
+if (pc.id==0) {
+strdef dircmd, direx
+// First, check to make sure RunName has not already been used.
+rn = -1	// rn will tell us what number to append to the RunName to make it unique
+sprint(dircmd, "[ -d \"./results/%s\" ] && echo \"AlreadyExists\" ", RunName)
+
+//print "check command syntax for: ", dircmd
+{system(dircmd, direx)}	// Execute the list command and store the standard output
+						//  from it in the direx string		
+
+// If the RunName has already been used, we will append/increment a number at
+//  the end of the RunName to make a new RunName, then test that RunName for 
+//  uniqueness.
+while (strcmp(direx,"AlreadyExists\n")==0 ) {
+	rn = rn + 1
+	sprint(dircmd, "[ -d \"./results/%s_%02.0f\" ] && echo \"AlreadyExists\" ", RunName, rn)		
+	//print "Now, check command syntax for: ", dircmd
+	{system(dircmd, direx)}
+}
+
+// If we needed to change the RunName to make it unique, the rn flag will be >-1
+if (rn>-1) {
+	sprint(RunName, "%s_%02.0f", RunName, rn)
+}		
+
+print "gonna create a directory for ", RunName
+// Create the RunName directory within the results directory; all results from the simulation
+//  run will be stored in this directory.
+sprint(dircmd, "mkdir ./results/%s", RunName)
+print "gonna run command: ", dircmd
+{system(dircmd, direx)}
+
+strdef filepath
+sprint(filepath,"results/%s",RunName)
+
+pc.broadcast(filepath,0)
+pc.broadcast(RunName,0)
+}
+pc.barrier()
+
+if (pc.id==0) {
+//* setup - this stuff is normally loaded with M-x run-neuron (emacs command)
+{xopen("setup.hoc")}
+{xopen("nrnoc.hoc")}
+load_file("init.hoc")
+
+{xopen("geom.hoc")} // this is loaded with C-x C-l (emacs command)
+
+
+//* a few parameters
+
+//mytstop = 10e3 // set the simulation duration (in milliseconds)
+//mytstop is set in params.hoc:26 as a function of LearnDur+ZipDur+PreDur+PostDur
+
+//* this is the sim load command: C-x l (emacs command)
+
+load_file("nqsnet.hoc")
+load_file("network.hoc")
+load_file("params.hoc")
+load_file("run.hoc")
+load_file("nload.hoc")
+
+load_file("alz.hoc") // Load Alzheimer's testing code
+
+run() // run the simulation
+// pravgrates() // <<-- prints average firing rates .. MJB: Must load this fcn def hoc file to run tho
+// ap() // displays a GUI with some of the recoded spikes and cell voltages
+
+//print "spksE=", spksE, ", spksI=", spksI, " nE=", nE, " nI=", nI, " cellsE=", cellsE, " cellsI=", cellsI
+print " "
+print "Results are located in: ", filepath
+}
+
+{pc.runworker()} 	// Everything after this line is executed only by the host node
+					//  The NEURON website describes this as "The master host returns immediately. Worker hosts
+					//  start an infinite loop of requesting tasks for execution." 
+					
+{pc.done()}			// Sends the quit message to the worker processors, which then quit NEURON
+
+quit()	// Sends the quit message to the host processor, which then quits NEURON
+
